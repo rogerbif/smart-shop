@@ -7,8 +7,8 @@ import { ListTodo, BarChart3, Package } from 'lucide-react';
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // Oculta a BottomNav na tela de login/cadastro
-  if (pathname === '/' || pathname === '/register') return null;
+  // Oculta a BottomNav nas telas sem navegação inferior
+  if (pathname === '/' || pathname === '/register' || pathname.startsWith('/list/')) return null;
 
   return (
     <nav className="bottom-nav">

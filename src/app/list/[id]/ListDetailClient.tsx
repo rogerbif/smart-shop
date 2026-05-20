@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Trash2, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Trash2, ShoppingBag, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { 
   ShoppingList, 
@@ -14,6 +14,7 @@ import {
 } from '@/lib/actions';
 import ListItemRow from '@/components/organisms/ListItemRow';
 import AddItemForm from '@/components/organisms/AddItemForm';
+import BottomSheet from '@/components/molecules/BottomSheet';
 import ProgressBar from '@/components/atoms/ProgressBar';
 import Button from '@/components/atoms/Button';
 
@@ -26,6 +27,7 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
 
   // Ações para deletar a lista inteira
   const handleDeleteList = async () => {
@@ -74,6 +76,7 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
       if (res?.error) {
         setError(res.error);
       } else {
+        setIsAddSheetOpen(false);
         router.refresh();
       }
     });
@@ -106,15 +109,15 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
             Categoria: <strong>{list.category}</strong> • {list.is_shared ? 'Lista Compartilhada' : 'Lista Pessoal'}
           </p>
         </div>
-        <Button 
-          variant="ghost" 
-          onClick={handleDeleteList}
-          title="Excluir Lista"
-          aria-label="Excluir lista"
-          style={{ color: 'var(--danger)', padding: '6px' }}
+        <button 
+          className="btn-new-list"
+          onClick={() => setIsAddSheetOpen(true)}
+          title="Adicionar Produto"
+          aria-label="Adicionar Produto"
         >
-          <Trash2 size={20} />
-        </Button>
+          <Plus size={18} />
+          <span>Novo Item</span>
+        </button>
       </div>
 
       {error && (
@@ -123,11 +126,17 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
         </div>
       )}
 
-      {/* Formulário Adicionar Item */}
-      <AddItemForm
-        onAddItem={handleAddItem}
-        isPending={isPending}
-      />
+      {/* Bottom Sheet com Formulário Adicionar Item */}
+      <BottomSheet 
+        isOpen={isAddSheetOpen} 
+        onClose={() => setIsAddSheetOpen(false)}
+        title="Novo Produto"
+      >
+        <AddItemForm
+          onAddItem={handleAddItem}
+          isPending={isPending}
+        />
+      </BottomSheet>
 
       {/* Checklist de Itens */}
       <div className="checklist-container">
@@ -147,6 +156,17 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
             <p style={{ fontSize: '12px' }}>Adicione produtos acima para começar.</p>
           </div>
         )}
+      </div>
+
+      <div style={{ marginTop: '20px', marginBottom: '20px', display: 'flex', justifyContent: 'center' }}>
+        <button 
+          className="btn-danger"
+          onClick={handleDeleteList}
+          title="Excluir Lista"
+        >
+          <Trash2 size={18} />
+          <span>Excluir Lista</span>
+        </button>
       </div>
 
       {/* Barra de Orçamento Fixada Inferior (Modo Compra) */}

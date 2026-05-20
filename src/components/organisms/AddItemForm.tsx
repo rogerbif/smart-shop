@@ -30,50 +30,48 @@ export default function AddItemForm({
   };
 
   return (
-    <div className="add-item-card">
-      <form onSubmit={handleSubmit} className="add-item-form">
+    <form onSubmit={handleSubmit} className="add-item-form">
+      <Input
+        type="text"
+        className="form-item-input"
+        placeholder="Nome do produto (ex: Cenoura)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+        disabled={isPending}
+      />
+      
+      <div className="add-item-row-fields">
         <Input
-          type="text"
+          type="number"
           className="form-item-input"
-          placeholder="Nome do produto (ex: Cenoura)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          placeholder="Qtd (ex: 2)"
+          min="1"
+          value={qty}
+          onChange={(e) => setQty(parseInt(e.target.value) || 1)}
           required
           disabled={isPending}
         />
-        
-        <div className="add-item-row-fields">
-          <Input
-            type="number"
-            className="form-item-input"
-            placeholder="Qtd (ex: 2)"
-            min="1"
-            value={qty}
-            onChange={(e) => setQty(parseInt(e.target.value) || 1)}
-            required
-            disabled={isPending}
-          />
-          <Input
-            type="text"
-            className="form-item-input"
-            placeholder="Preço Est. (R$)"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            disabled={isPending}
-          />
-        </div>
+        <Input
+          type="text"
+          className="form-item-input"
+          placeholder="Preço Est. (R$)"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          disabled={isPending}
+        />
+      </div>
 
-        <Button
-          type="submit"
-          variant="primary"
-          className="btn-add-item"
-          isPending={isPending}
-          style={{ width: '100%', padding: '10px' }}
-        >
-          {!isPending && <Plus size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />}
-          Adicionar Item
-        </Button>
-      </form>
-    </div>
+      <Button
+        type="submit"
+        variant="primary"
+        className="btn-add-item"
+        isPending={isPending}
+        style={{ width: '100%', padding: '10px' }}
+      >
+        {!isPending && <Plus size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />}
+        Adicionar Item
+      </Button>
+    </form>
   );
 }

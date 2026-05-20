@@ -1,11 +1,11 @@
 'use server';
 
-import db from './db';
+import { supabase } from './supabase';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export interface User {
-  id: number;
+  id: string; // UUID
   name: string;
   email: string;
   avatar_url: string | null;
@@ -16,7 +16,7 @@ export interface ShoppingList {
   title: string;
   category: string;
   is_shared: boolean;
-  user_id: number;
+  user_id: string; // UUID
   created_at: string;
   total_items: number;
   bought_items: number;
@@ -36,11 +36,11 @@ export interface PantryItem {
   name: string;
   stock_level: 'Cheio' | 'Baixo' | 'Em Falta';
   quantity: string;
-  user_id: number;
+  user_id: string; // UUID
 }
 
 // ----------------------------------------------------
-// Autenticação
+// Autenticação (Fase 1: Cookie-based com tabela profiles)
 // ----------------------------------------------------
 
 export async function login(formData: FormData) {
@@ -52,14 +52,18 @@ export async function login(formData: FormData) {
   }
 
   try {
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+    const { data: user, error: dbError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    if (!user || user.password !== password) {
+    if (dbError || !user || user.password !== password) {
       return { error: 'E-mail ou senha incorretos.' };
     }
 
     const cookieStore = await cookies();
-    cookieStore.set('auth_user_id', user.id.toString(), {
+    cookieStore.set('auth_user_id', user.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 7, // 1 semana
@@ -87,7 +91,12 @@ export async function register(formData: FormData) {
   }
 
   try {
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
+    // Verificar se e-mail já existe
+    const { data: existingUser } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .single();
 
     if (existingUser) {
       return { error: 'Este e-mail/usuário já está cadastrado.' };
@@ -97,15 +106,24 @@ export async function register(formData: FormData) {
     const name = namePrefix.charAt(0).toUpperCase() + namePrefix.slice(1);
     const avatarUrl = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&h=100';
 
-    const info = db.prepare('INSERT INTO users (name, email, password, avatar_url) VALUES (?, ?, ?, ?)').run(
-      name,
-      email,
-      password,
-      avatarUrl
-    );
+    const { data: newUser, error: insertError } = await supabase
+      .from('profiles')
+      .insert({
+        name,
+        email,
+        password,
+        avatar_url: avatarUrl,
+      })
+      .select()
+      .single();
+
+    if (insertError || !newUser) {
+      console.error('Erro ao inserir usuário:', insertError);
+      return { error: 'Erro interno ao realizar cadastro.' };
+    }
 
     const cookieStore = await cookies();
-    cookieStore.set('auth_user_id', info.lastInsertRowid.toString(), {
+    cookieStore.set('auth_user_id', newUser.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60 * 24 * 7,
@@ -127,13 +145,19 @@ export async function logout() {
 
 export async function getCurrentUser(): Promise<User | null> {
   const cookieStore = await cookies();
-  const userIdStr = cookieStore.get('auth_user_id')?.value;
+  const userId = cookieStore.get('auth_user_id')?.value;
 
-  if (!userIdStr) return null;
+  if (!userId) return null;
 
   try {
-    const user = db.prepare('SELECT id, name, email, avatar_url FROM users WHERE id = ?').get(parseInt(userIdStr)) as User | undefined;
-    return user || null;
+    const { data: user, error } = await supabase
+      .from('profiles')
+      .select('id, name, email, avatar_url')
+      .eq('id', userId)
+      .single();
+
+    if (error || !user) return null;
+    return user as User;
   } catch (error) {
     return null;
   }
@@ -147,34 +171,40 @@ export async function getLists(filter: 'all' | 'personal' | 'shared'): Promise<S
   const user = await getCurrentUser();
   if (!user) redirect('/');
 
-  let query = `
-    SELECT 
-      l.*,
-      COUNT(i.id) as total_items,
-      SUM(CASE WHEN i.is_bought = 1 THEN 1 ELSE 0 END) as bought_items
-    FROM lists l
-    LEFT JOIN items i ON l.id = i.list_id
-    WHERE l.user_id = ?
-  `;
-
-  const params: any[] = [user.id];
-
-  if (filter === 'personal') {
-    query += ` AND l.is_shared = 0`;
-  } else if (filter === 'shared') {
-    query += ` AND l.is_shared = 1`;
-  }
-
-  query += ` GROUP BY l.id ORDER BY l.created_at DESC`;
-
   try {
-    const rows = db.prepare(query).all(...params) as any[];
-    return rows.map(row => ({
-      ...row,
-      is_shared: row.is_shared === 1,
-      total_items: row.total_items || 0,
-      bought_items: row.bought_items || 0,
-    }));
+    // Buscar listas com contagem de itens via relação
+    let query = supabase
+      .from('lists')
+      .select('*, items(id, is_bought)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (filter === 'personal') {
+      query = query.eq('is_shared', false);
+    } else if (filter === 'shared') {
+      query = query.eq('is_shared', true);
+    }
+
+    const { data: rows, error } = await query;
+
+    if (error) {
+      console.error('Erro ao buscar listas:', error);
+      return [];
+    }
+
+    return (rows || []).map((row: any) => {
+      const items = row.items || [];
+      return {
+        id: row.id,
+        title: row.title,
+        category: row.category,
+        is_shared: row.is_shared,
+        user_id: row.user_id,
+        created_at: row.created_at,
+        total_items: items.length,
+        bought_items: items.filter((i: any) => i.is_bought === true).length,
+      };
+    });
   } catch (error) {
     console.error('Erro ao buscar listas:', error);
     return [];
@@ -186,33 +216,49 @@ export async function getListDetails(listId: number): Promise<{ list: ShoppingLi
   if (!user) redirect('/');
 
   try {
-    const listRow = db.prepare(`
-      SELECT 
-        l.*,
-        COUNT(i.id) as total_items,
-        SUM(CASE WHEN i.is_bought = 1 THEN 1 ELSE 0 END) as bought_items
-      FROM lists l
-      LEFT JOIN items i ON l.id = i.list_id
-      WHERE l.id = ? AND l.user_id = ?
-      GROUP BY l.id
-    `).get(listId, user.id) as any;
+    // Buscar a lista com itens embutidos
+    const { data: listRow, error: listError } = await supabase
+      .from('lists')
+      .select('*, items(id, is_bought)')
+      .eq('id', listId)
+      .eq('user_id', user.id)
+      .single();
 
-    if (!listRow) return null;
+    if (listError || !listRow) return null;
 
-    const itemsRows = db.prepare(`
-      SELECT * FROM items WHERE list_id = ? ORDER BY is_bought ASC, id DESC
-    `).all(listId) as any[];
+    // Buscar itens separadamente para obter todos os campos
+    const { data: itemsRows, error: itemsError } = await supabase
+      .from('items')
+      .select('*')
+      .eq('list_id', listId)
+      .order('is_bought', { ascending: true })
+      .order('id', { ascending: false });
+
+    if (itemsError) {
+      console.error('Erro ao buscar itens:', itemsError);
+      return null;
+    }
+
+    const embeddedItems = listRow.items || [];
 
     const list: ShoppingList = {
-      ...listRow,
-      is_shared: listRow.is_shared === 1,
-      total_items: listRow.total_items || 0,
-      bought_items: listRow.bought_items || 0,
+      id: listRow.id,
+      title: listRow.title,
+      category: listRow.category,
+      is_shared: listRow.is_shared,
+      user_id: listRow.user_id,
+      created_at: listRow.created_at,
+      total_items: embeddedItems.length,
+      bought_items: embeddedItems.filter((i: any) => i.is_bought === true).length,
     };
 
-    const items: ListItem[] = itemsRows.map(item => ({
-      ...item,
-      is_bought: item.is_bought === 1,
+    const items: ListItem[] = (itemsRows || []).map((item: any) => ({
+      id: item.id,
+      list_id: item.list_id,
+      name: item.name,
+      quantity: item.quantity,
+      estimated_price: parseFloat(item.estimated_price) || 0,
+      is_bought: item.is_bought,
     }));
 
     return { list, items };
@@ -221,40 +267,6 @@ export async function getListDetails(listId: number): Promise<{ list: ShoppingLi
     return null;
   }
 }
-
-const TEMPLATE_ITEMS: Record<string, { name: string; quantity: number; price: number }[]> = {
-  'Eventos': [
-    { name: 'Copos descartáveis', quantity: 2, price: 8.5 },
-    { name: 'Refrigerante 2L', quantity: 4, price: 9.0 },
-    { name: 'Pratinhos descartáveis', quantity: 1, price: 12.0 },
-    { name: 'Carvão 5kg', quantity: 1, price: 29.9 },
-    { name: 'Gelo escama', quantity: 2, price: 15.0 },
-  ],
-  'Supermercado': [
-    { name: 'Leite Integral', quantity: 4, price: 5.5 },
-    { name: 'Pão de Forma', quantity: 2, price: 8.9 },
-    { name: 'Café Torrado', quantity: 1, price: 19.9 },
-    { name: 'Arroz 5kg', quantity: 1, price: 26.5 },
-    { name: 'Feijão Preto', quantity: 2, price: 9.8 },
-  ],
-  'Farmácia': [
-    { name: 'Analgésico', quantity: 1, price: 12.5 },
-    { name: 'Algodão', quantity: 1, price: 6.9 },
-    { name: 'Curativo (Band-Aid)', quantity: 1, price: 9.9 },
-    { name: 'Álcool em gel', quantity: 1, price: 11.5 },
-  ],
-  'Material Escolar': [
-    { name: 'Caderno 10 matérias', quantity: 1, price: 24.9 },
-    { name: 'Caneta azul', quantity: 3, price: 2.2 },
-    { name: 'Lápis de escrever', quantity: 3, price: 1.5 },
-    { name: 'Borracha escolar', quantity: 1, price: 3.5 },
-  ],
-  'Coisas que quero comprar': [
-    { name: 'Livro Novo', quantity: 1, price: 59.9 },
-    { name: 'Fone de ouvido sem fio', quantity: 1, price: 189.9 },
-    { name: 'Camiseta preta basica', quantity: 2, price: 49.9 },
-  ],
-};
 
 export async function createListFromTemplates(
   selectedTemplates: string[],
@@ -265,22 +277,36 @@ export async function createListFromTemplates(
   if (!user) redirect('/');
 
   try {
-    const insertList = db.prepare('INSERT INTO lists (title, category, is_shared, user_id) VALUES (?, ?, ?, ?)');
+    let lastListId: number | null = null;
 
-    let lastListId: number | bigint | null = null;
-
-    // Inserir as listas para cada template selecionado (mantendo-as totalmente vazias)
     for (const template of selectedTemplates) {
       let title = template;
       if (template === 'Criar lista personalizada') {
         title = customTitle.trim() || 'Lista Personalizada';
       }
 
-      const info = insertList.run(title, template, isShared ? 1 : 0, user.id);
-      lastListId = info.lastInsertRowid;
+      const { data: newList, error: insertError } = await supabase
+        .from('lists')
+        .insert({
+          title,
+          category: template,
+          is_shared: isShared,
+          user_id: user.id,
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        console.error('Erro ao criar lista:', insertError);
+        return { error: 'Não foi possível criar a(s) lista(s).' };
+      }
+
+      if (newList) {
+        lastListId = newList.id;
+      }
     }
 
-    return { success: true, listId: lastListId ? Number(lastListId) : null };
+    return { success: true, listId: lastListId };
   } catch (error) {
     console.error('Erro ao criar lista:', error);
     return { error: 'Não foi possível criar a(s) lista(s).' };
@@ -292,7 +318,17 @@ export async function deleteList(listId: number) {
   if (!user) redirect('/');
 
   try {
-    db.prepare('DELETE FROM lists WHERE id = ? AND user_id = ?').run(listId, user.id);
+    const { error } = await supabase
+      .from('lists')
+      .delete()
+      .eq('id', listId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Erro ao excluir lista:', error);
+      return { error: 'Não foi possível excluir a lista.' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Erro ao excluir lista:', error);
@@ -309,12 +345,27 @@ export async function toggleItemBought(itemId: number, isBought: boolean) {
   if (!user) redirect('/');
 
   try {
-    db.prepare(`
-      UPDATE items 
-      SET is_bought = ? 
-      WHERE id = ? AND list_id IN (SELECT id FROM lists WHERE user_id = ?)
-    `).run(isBought ? 1 : 0, itemId, user.id);
-    
+    // Verificar se o item pertence a uma lista do usuário
+    const { data: item } = await supabase
+      .from('items')
+      .select('list_id, lists!inner(user_id)')
+      .eq('id', itemId)
+      .single();
+
+    if (!item || (item as any).lists?.user_id !== user.id) {
+      return { error: 'Item não encontrado ou sem permissão.' };
+    }
+
+    const { error } = await supabase
+      .from('items')
+      .update({ is_bought: isBought })
+      .eq('id', itemId);
+
+    if (error) {
+      console.error('Erro ao alterar status do item:', error);
+      return { error: 'Não foi possível atualizar o item.' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Erro ao alterar status do item:', error);
@@ -328,15 +379,31 @@ export async function addListItem(listId: number, name: string, quantity: number
 
   try {
     // Validar se a lista pertence ao usuário
-    const list = db.prepare('SELECT id FROM lists WHERE id = ? AND user_id = ?').get(listId, user.id);
+    const { data: list } = await supabase
+      .from('lists')
+      .select('id')
+      .eq('id', listId)
+      .eq('user_id', user.id)
+      .single();
+
     if (!list) {
       return { error: 'Lista não encontrada ou sem permissão.' };
     }
 
-    db.prepare(`
-      INSERT INTO items (list_id, name, quantity, estimated_price, is_bought)
-      VALUES (?, ?, ?, ?, 0)
-    `).run(listId, name.trim(), quantity || 1, price || 0.0);
+    const { error } = await supabase
+      .from('items')
+      .insert({
+        list_id: listId,
+        name: name.trim(),
+        quantity: quantity || 1,
+        estimated_price: price || 0.0,
+        is_bought: false,
+      });
+
+    if (error) {
+      console.error('Erro ao adicionar item:', error);
+      return { error: 'Não foi possível adicionar o item.' };
+    }
 
     return { success: true };
   } catch (error) {
@@ -350,11 +417,27 @@ export async function deleteListItem(itemId: number) {
   if (!user) redirect('/');
 
   try {
-    db.prepare(`
-      DELETE FROM items 
-      WHERE id = ? AND list_id IN (SELECT id FROM lists WHERE user_id = ?)
-    `).run(itemId, user.id);
-    
+    // Verificar propriedade via join
+    const { data: item } = await supabase
+      .from('items')
+      .select('id, lists!inner(user_id)')
+      .eq('id', itemId)
+      .single();
+
+    if (!item || (item as any).lists?.user_id !== user.id) {
+      return { error: 'Item não encontrado ou sem permissão.' };
+    }
+
+    const { error } = await supabase
+      .from('items')
+      .delete()
+      .eq('id', itemId);
+
+    if (error) {
+      console.error('Erro ao excluir item:', error);
+      return { error: 'Não foi possível excluir o item.' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Erro ao excluir item:', error);
@@ -371,8 +454,19 @@ export async function getPantryItems(): Promise<PantryItem[]> {
   if (!user) redirect('/');
 
   try {
-    const rows = db.prepare('SELECT * FROM pantry WHERE user_id = ? ORDER BY stock_level DESC, name ASC').all(user.id) as PantryItem[];
-    return rows;
+    const { data: rows, error } = await supabase
+      .from('pantry')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('stock_level', { ascending: false })
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar despensa:', error);
+      return [];
+    }
+
+    return (rows || []) as PantryItem[];
   } catch (error) {
     console.error('Erro ao buscar despensa:', error);
     return [];
@@ -385,29 +479,63 @@ export async function replenishPantryItem(pantryId: number) {
 
   try {
     // 1. Buscar detalhes do item da despensa
-    const item = db.prepare('SELECT * FROM pantry WHERE id = ? AND user_id = ?').get(pantryId, user.id) as PantryItem | undefined;
-    if (!item) return { error: 'Item não encontrado.' };
+    const { data: item, error: itemError } = await supabase
+      .from('pantry')
+      .select('*')
+      .eq('id', pantryId)
+      .eq('user_id', user.id)
+      .single();
 
-    // 2. Procurar ou criar uma lista de "Reposição de Despensa"
-    let list = db.prepare('SELECT id FROM lists WHERE title = ? AND user_id = ?').get('Reposição de Despensa', user.id) as { id: number } | undefined;
-    if (!list) {
-      const info = db.prepare('INSERT INTO lists (title, category, is_shared, user_id) VALUES (?, ?, ?, ?)').run(
-        'Reposição de Despensa',
-        'Supermercado',
-        0,
-        user.id
-      );
-      list = { id: Number(info.lastInsertRowid) };
+    if (itemError || !item) return { error: 'Item não encontrado.' };
+
+    // 2. Procurar ou criar a lista de "Reposição de Despensa"
+    const { data: existingList } = await supabase
+      .from('lists')
+      .select('id')
+      .eq('title', 'Reposição de Despensa')
+      .eq('user_id', user.id)
+      .single();
+
+    let listId: number;
+
+    if (existingList) {
+      listId = existingList.id;
+    } else {
+      const { data: newList, error: createError } = await supabase
+        .from('lists')
+        .insert({
+          title: 'Reposição de Despensa',
+          category: 'Supermercado',
+          is_shared: false,
+          user_id: user.id,
+        })
+        .select('id')
+        .single();
+
+      if (createError || !newList) {
+        console.error('Erro ao criar lista de reposição:', createError);
+        return { error: 'Erro ao processar reposição.' };
+      }
+      listId = newList.id;
     }
 
     // 3. Adicionar o item à lista de compras
-    db.prepare(`
-      INSERT INTO items (list_id, name, quantity, estimated_price, is_bought)
-      VALUES (?, ?, 1, 0.0, 0)
-    `).run(list.id, item.name);
+    const { error: addError } = await supabase
+      .from('items')
+      .insert({
+        list_id: listId,
+        name: item.name,
+        quantity: 1,
+        estimated_price: 0.0,
+        is_bought: false,
+      });
 
-    // 4. Mudar nível na despensa temporariamente ou após compra (neste caso atualizamos para 'Baixo' ou deixamos a encargo do fluxo)
-    return { success: true, listId: list.id };
+    if (addError) {
+      console.error('Erro ao adicionar item de reposição:', addError);
+      return { error: 'Erro ao processar reposição.' };
+    }
+
+    return { success: true, listId };
   } catch (error) {
     console.error('Erro ao repor item:', error);
     return { error: 'Erro ao processar reposição.' };
@@ -419,7 +547,17 @@ export async function updatePantryStock(pantryId: number, level: 'Cheio' | 'Baix
   if (!user) redirect('/');
 
   try {
-    db.prepare('UPDATE pantry SET stock_level = ? WHERE id = ? AND user_id = ?').run(level, pantryId, user.id);
+    const { error } = await supabase
+      .from('pantry')
+      .update({ stock_level: level })
+      .eq('id', pantryId)
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Erro ao atualizar despensa:', error);
+      return { error: 'Não foi possível atualizar o estoque.' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Erro ao atualizar despensa:', error);

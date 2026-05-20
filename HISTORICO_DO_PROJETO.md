@@ -8,3 +8,11 @@
 
 ### [20/05/2026] v0.1.1 - Instalação Amago AI Kit
 - [Infra] **Amago AI Kit**: Configuração do protocolo GEMINI como sistema mestre de inteligência na raiz do projeto e atualização de regras no `.gitignore`.
+
+### [20/05/2026] v0.2.0 - Migração do Banco de Dados: SQLite → Supabase PostgreSQL (Fase 1)
+- [Infra] **Migração de Banco de Dados**: Substituição completa do SQLite (`better-sqlite3`) pelo PostgreSQL gerenciado via Supabase local (Docker). Criação de migration oficial em `supabase/migrations/00001_initial_schema.sql`.
+- [Refactor] **Reescrita de 13 Server Actions**: Todas as funções em `actions.ts` foram reescritas de queries síncronas SQLite para chamadas assíncronas do SDK `@supabase/supabase-js`.
+- [Refactor] **Página de Relatórios**: `reports/page.tsx` reescrita para usar Supabase embedded selects ao invés de SQL raw.
+- [Infra] **Conexão Server-Side**: Criado `src/lib/supabase.ts` com `SUPABASE_SERVICE_ROLE_KEY` (sem exposição de chaves no client).
+- [Infra] **Variáveis de Ambiente**: Criado `.env.local` com credenciais do Supabase local.
+- [Infra] **IDs UUID**: Tipo de `user.id` migrado de `INTEGER` para `UUID` em todas as interfaces TypeScript.

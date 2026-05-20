@@ -1,6 +1,6 @@
 import { getCurrentUser } from '@/lib/actions';
 import { redirect } from 'next/navigation';
-import db from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { BarChart3, Clock, Wallet, CheckSquare } from 'lucide-react';
 import Link from 'next/link';
 
@@ -17,44 +17,48 @@ export default async function ReportsPage() {
     redirect('/');
   }
 
-  // 1. Buscar os custos por lista para o usuário logado
-  const listCosts = db.prepare(`
-    SELECT 
-      l.title,
-      COALESCE(SUM(i.estimated_price * i.quantity), 0) as total_cost,
-      COALESCE(SUM(CASE WHEN i.is_bought = 1 THEN i.estimated_price * i.quantity ELSE 0 END), 0) as spent_cost
-    FROM lists l
-    LEFT JOIN items i ON l.id = i.list_id
-    WHERE l.user_id = ?
-    GROUP BY l.id
-    ORDER BY l.created_at DESC
-    LIMIT 5
-  `).all(user.id) as ListCostRow[];
+  // 1. Buscar listas com itens para calcular custos
+  const { data: listsWithItems } = await supabase
+    .from('lists')
+    .select('id, title, created_at, items(estimated_price, quantity, is_bought)')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(5);
 
-  // 2. Estatísticas gerais
-  const stats = db.prepare(`
-    SELECT 
-      COUNT(DISTINCT l.id) as total_lists,
-      COUNT(i.id) as total_items,
-      SUM(CASE WHEN i.is_bought = 1 THEN 1 ELSE 0 END) as bought_items,
-      COALESCE(SUM(i.estimated_price * i.quantity), 0) as total_estimated,
-      COALESCE(SUM(CASE WHEN i.is_bought = 1 THEN i.estimated_price * i.quantity ELSE 0 END), 0) as total_spent
-    FROM lists l
-    LEFT JOIN items i ON l.id = i.list_id
-    WHERE l.user_id = ?
-  `).get(user.id) as {
-    total_lists: number;
-    total_items: number;
-    bought_items: number;
-    total_estimated: number;
-    total_spent: number;
-  };
+  const listCosts: ListCostRow[] = (listsWithItems || []).map((list: any) => {
+    const items = list.items || [];
+    const total_cost = items.reduce((sum: number, i: any) => sum + (parseFloat(i.estimated_price) * i.quantity), 0);
+    const spent_cost = items.reduce((sum: number, i: any) => {
+      return sum + (i.is_bought ? (parseFloat(i.estimated_price) * i.quantity) : 0);
+    }, 0);
+    return { title: list.title, total_cost, spent_cost };
+  });
 
-  const totalLists = stats.total_lists || 0;
-  const totalItems = stats.total_items || 0;
-  const boughtItems = stats.bought_items || 0;
-  const totalEstimated = stats.total_estimated || 0;
-  const totalSpent = stats.total_spent || 0;
+  // 2. Estatísticas gerais — buscar TODAS as listas (sem limit)
+  const { data: allListsWithItems } = await supabase
+    .from('lists')
+    .select('id, items(estimated_price, quantity, is_bought)')
+    .eq('user_id', user.id);
+
+  const allLists = allListsWithItems || [];
+  const totalLists = allLists.length;
+  let totalItems = 0;
+  let boughtItems = 0;
+  let totalEstimated = 0;
+  let totalSpent = 0;
+
+  for (const list of allLists) {
+    const items = (list as any).items || [];
+    totalItems += items.length;
+    for (const item of items) {
+      const price = parseFloat(item.estimated_price) * item.quantity;
+      totalEstimated += price;
+      if (item.is_bought) {
+        boughtItems++;
+        totalSpent += price;
+      }
+    }
+  }
 
   // Gerar dados do gráfico SVG
   const chartHeight = 150;

@@ -16,3 +16,11 @@
 - [Infra] **Conexão Server-Side**: Criado `src/lib/supabase.ts` com `SUPABASE_SERVICE_ROLE_KEY` (sem exposição de chaves no client).
 - [Infra] **Variáveis de Ambiente**: Criado `.env.local` com credenciais do Supabase local.
 - [Infra] **IDs UUID**: Tipo de `user.id` migrado de `INTEGER` para `UUID` em todas as interfaces TypeScript.
+
+### [20/05/2026] v0.3.0 - Migração da Autenticação: Supabase Auth (Fase 2)
+- [Auth] **Supabase Auth Nativo**: Substituída a autenticação manual pelo `@supabase/ssr` (`signUp`, `signInWithPassword`, `signOut`).
+- [Auth] **Proxy de Sessão**: Adicionado `src/proxy.ts` (Next.js 16) para gerenciar renovação de tokens JWT e proteger rotas autenticadas.
+- [Infra] **Segurança (RLS)**: Habilitado o *Row Level Security* em todas as tabelas, garantindo o isolamento total dos dados por usuário diretamente no banco.
+- [Database] **Trigger Automático**: Criado gatilho no PostgreSQL (`handle_new_user`) para gerar automaticamente o registro na tabela `profiles` quando uma conta é criada.
+- [Database] **Limpeza de Schema**: Removidas as colunas `email` e `password` da tabela `profiles`.
+- [UI] **Formulários Atualizados**: `RegisterForm` agora solicita o nome do usuário. `LoginForm` limpo de credenciais default e aviso de teste.

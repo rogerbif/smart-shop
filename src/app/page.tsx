@@ -1,13 +1,6 @@
-import { getCurrentUser } from '@/lib/actions';
-import { redirect } from 'next/navigation';
 import LoginForm from './LoginForm';
 
-export default async function Page() {
-  const user = await getCurrentUser();
-
-  if (user) {
-    redirect('/dashboard');
-  }
-
+// O middleware já redireciona usuários autenticados para /dashboard
+export default function Page() {
   return <LoginForm />;
 }

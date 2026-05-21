@@ -79,9 +79,8 @@ export default function LoginForm() {
           type="email"
           id="email"
           name="email"
-          placeholder="Informe seu usuário"
+          placeholder="Informe seu e-mail"
           required
-          defaultValue="ana@smartshop.com"
         />
 
         {/* Campo Senha */}
@@ -93,7 +92,6 @@ export default function LoginForm() {
           name="password"
           placeholder="Informe sua senha"
           required
-          defaultValue="123456"
         />
 
         {/* Link Recuperar Senha */}
@@ -117,11 +115,6 @@ export default function LoginForm() {
           </Link>
         </div>
       </form>
-      
-      {/* Informações dos Usuários de Teste discretas */}
-      <div style={{ marginTop: 'auto', padding: '10px', fontSize: '10px', textAlign: 'center', color: '#A0AEC0' }}>
-        Acesso rápido configurado por padrão. Clique em "Entrar" para prosseguir.
-      </div>
     </div>
   );
 }

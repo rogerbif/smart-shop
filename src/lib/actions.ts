@@ -1,11 +1,10 @@
 'use server';
 
-import { supabase } from './supabase';
-import { cookies } from 'next/headers';
+import { createServerClient, createAdminClient } from './supabase';
 import { redirect } from 'next/navigation';
 
 export interface User {
-  id: string; // UUID
+  id: string; // UUID from auth.users
   name: string;
   email: string;
   avatar_url: string | null;
@@ -40,7 +39,7 @@ export interface PantryItem {
 }
 
 // ----------------------------------------------------
-// Autenticação (Fase 1: Cookie-based com tabela profiles)
+// Autenticação (Fase 2: Supabase Auth nativo)
 // ----------------------------------------------------
 
 export async function login(formData: FormData) {
@@ -52,23 +51,16 @@ export async function login(formData: FormData) {
   }
 
   try {
-    const { data: user, error: dbError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', email)
-      .single();
+    const supabase = await createServerClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    if (dbError || !user || user.password !== password) {
+    if (error) {
+      console.error('Erro no login:', error.message);
       return { error: 'E-mail ou senha incorretos.' };
     }
-
-    const cookieStore = await cookies();
-    cookieStore.set('auth_user_id', user.id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 1 semana
-      path: '/',
-    });
 
     return { success: true };
   } catch (error: any) {
@@ -78,6 +70,7 @@ export async function login(formData: FormData) {
 }
 
 export async function register(formData: FormData) {
+  const name = formData.get('name') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
@@ -90,45 +83,30 @@ export async function register(formData: FormData) {
     return { error: 'As senhas não coincidem.' };
   }
 
+  if (password.length < 6) {
+    return { error: 'A senha deve ter pelo menos 6 caracteres.' };
+  }
+
   try {
-    // Verificar se e-mail já existe
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .single();
-
-    if (existingUser) {
-      return { error: 'Este e-mail/usuário já está cadastrado.' };
-    }
-
-    const namePrefix = email.split('@')[0];
-    const name = namePrefix.charAt(0).toUpperCase() + namePrefix.slice(1);
-    const avatarUrl = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&h=100';
-
-    const { data: newUser, error: insertError } = await supabase
-      .from('profiles')
-      .insert({
-        name,
-        email,
-        password,
-        avatar_url: avatarUrl,
-      })
-      .select()
-      .single();
-
-    if (insertError || !newUser) {
-      console.error('Erro ao inserir usuário:', insertError);
-      return { error: 'Erro interno ao realizar cadastro.' };
-    }
-
-    const cookieStore = await cookies();
-    cookieStore.set('auth_user_id', newUser.id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7,
-      path: '/',
+    const supabase = await createServerClient();
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name: name?.trim() || email.split('@')[0],
+          avatar_url: null,
+        },
+      },
     });
+
+    if (error) {
+      console.error('Erro no cadastro:', error.message);
+      if (error.message.includes('already registered')) {
+        return { error: 'Este e-mail já está cadastrado.' };
+      }
+      return { error: 'Erro ao realizar cadastro. Tente novamente.' };
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -138,26 +116,31 @@ export async function register(formData: FormData) {
 }
 
 export async function logout() {
-  const cookieStore = await cookies();
-  cookieStore.delete('auth_user_id');
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
   redirect('/');
 }
 
 export async function getCurrentUser(): Promise<User | null> {
-  const cookieStore = await cookies();
-  const userId = cookieStore.get('auth_user_id')?.value;
-
-  if (!userId) return null;
-
   try {
-    const { data: user, error } = await supabase
+    const supabase = await createServerClient();
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !authUser) return null;
+
+    // Buscar profile completo
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('id, name, email, avatar_url')
-      .eq('id', userId)
+      .select('name, avatar_url')
+      .eq('id', authUser.id)
       .single();
 
-    if (error || !user) return null;
-    return user as User;
+    return {
+      id: authUser.id,
+      email: authUser.email || '',
+      name: profile?.name || authUser.user_metadata?.name || 'Usuário',
+      avatar_url: profile?.avatar_url || authUser.user_metadata?.avatar_url || null,
+    };
   } catch (error) {
     return null;
   }
@@ -172,7 +155,7 @@ export async function getLists(filter: 'all' | 'personal' | 'shared'): Promise<S
   if (!user) redirect('/');
 
   try {
-    // Buscar listas com contagem de itens via relação
+    const supabase = await createServerClient();
     let query = supabase
       .from('lists')
       .select('*, items(id, is_bought)')
@@ -216,7 +199,8 @@ export async function getListDetails(listId: number): Promise<{ list: ShoppingLi
   if (!user) redirect('/');
 
   try {
-    // Buscar a lista com itens embutidos
+    const supabase = await createServerClient();
+
     const { data: listRow, error: listError } = await supabase
       .from('lists')
       .select('*, items(id, is_bought)')
@@ -226,7 +210,6 @@ export async function getListDetails(listId: number): Promise<{ list: ShoppingLi
 
     if (listError || !listRow) return null;
 
-    // Buscar itens separadamente para obter todos os campos
     const { data: itemsRows, error: itemsError } = await supabase
       .from('items')
       .select('*')
@@ -277,6 +260,7 @@ export async function createListFromTemplates(
   if (!user) redirect('/');
 
   try {
+    const supabase = await createServerClient();
     let lastListId: number | null = null;
 
     for (const template of selectedTemplates) {
@@ -318,6 +302,7 @@ export async function deleteList(listId: number) {
   if (!user) redirect('/');
 
   try {
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('lists')
       .delete()
@@ -345,17 +330,7 @@ export async function toggleItemBought(itemId: number, isBought: boolean) {
   if (!user) redirect('/');
 
   try {
-    // Verificar se o item pertence a uma lista do usuário
-    const { data: item } = await supabase
-      .from('items')
-      .select('list_id, lists!inner(user_id)')
-      .eq('id', itemId)
-      .single();
-
-    if (!item || (item as any).lists?.user_id !== user.id) {
-      return { error: 'Item não encontrado ou sem permissão.' };
-    }
-
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('items')
       .update({ is_bought: isBought })
@@ -378,7 +353,9 @@ export async function addListItem(listId: number, name: string, quantity: number
   if (!user) redirect('/');
 
   try {
-    // Validar se a lista pertence ao usuário
+    const supabase = await createServerClient();
+
+    // Validar se a lista pertence ao usuário (RLS já faz isso, mas validamos explicitamente)
     const { data: list } = await supabase
       .from('lists')
       .select('id')
@@ -417,17 +394,7 @@ export async function deleteListItem(itemId: number) {
   if (!user) redirect('/');
 
   try {
-    // Verificar propriedade via join
-    const { data: item } = await supabase
-      .from('items')
-      .select('id, lists!inner(user_id)')
-      .eq('id', itemId)
-      .single();
-
-    if (!item || (item as any).lists?.user_id !== user.id) {
-      return { error: 'Item não encontrado ou sem permissão.' };
-    }
-
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('items')
       .delete()
@@ -454,6 +421,7 @@ export async function getPantryItems(): Promise<PantryItem[]> {
   if (!user) redirect('/');
 
   try {
+    const supabase = await createServerClient();
     const { data: rows, error } = await supabase
       .from('pantry')
       .select('*')
@@ -478,7 +446,8 @@ export async function replenishPantryItem(pantryId: number) {
   if (!user) redirect('/');
 
   try {
-    // 1. Buscar detalhes do item da despensa
+    const supabase = await createServerClient();
+
     const { data: item, error: itemError } = await supabase
       .from('pantry')
       .select('*')
@@ -488,7 +457,7 @@ export async function replenishPantryItem(pantryId: number) {
 
     if (itemError || !item) return { error: 'Item não encontrado.' };
 
-    // 2. Procurar ou criar a lista de "Reposição de Despensa"
+    // Procurar ou criar a lista de "Reposição de Despensa"
     const { data: existingList } = await supabase
       .from('lists')
       .select('id')
@@ -519,7 +488,6 @@ export async function replenishPantryItem(pantryId: number) {
       listId = newList.id;
     }
 
-    // 3. Adicionar o item à lista de compras
     const { error: addError } = await supabase
       .from('items')
       .insert({
@@ -547,6 +515,7 @@ export async function updatePantryStock(pantryId: number, level: 'Cheio' | 'Baix
   if (!user) redirect('/');
 
   try {
+    const supabase = await createServerClient();
     const { error } = await supabase
       .from('pantry')
       .update({ stock_level: level })

@@ -74,14 +74,25 @@ export default function RegisterForm() {
           </div>
         )}
 
-        {/* Campo Usuário */}
+        {/* Campo Nome */}
         <InputField
-          label="Usuário"
+          label="Nome"
+          variant="login"
+          type="text"
+          id="name"
+          name="name"
+          placeholder="Informe seu nome"
+          required
+        />
+
+        {/* Campo E-mail */}
+        <InputField
+          label="E-mail"
           variant="login"
           type="email"
           id="email"
           name="email"
-          placeholder="Informe seu usuário"
+          placeholder="Informe seu e-mail"
           required
         />
 

@@ -1,6 +1,6 @@
 import { getCurrentUser } from '@/lib/actions';
 import { redirect } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase';
 import { BarChart3, Clock, Wallet, CheckSquare } from 'lucide-react';
 import Link from 'next/link';
 
@@ -18,6 +18,7 @@ export default async function ReportsPage() {
   }
 
   // 1. Buscar listas com itens para calcular custos
+  const supabase = await createServerClient();
   const { data: listsWithItems } = await supabase
     .from('lists')
     .select('id, title, created_at, items(estimated_price, quantity, is_bought)')

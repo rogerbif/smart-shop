@@ -2,32 +2,43 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Trash2, ShoppingBag, Plus } from 'lucide-react';
+import { ArrowLeft, Trash2, ShoppingBag, Plus, Users, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { 
   ShoppingList, 
   ListItem, 
+  Collaborator,
+  User,
   toggleItemBought, 
   addListItem, 
   deleteListItem,
-  deleteList
+  deleteList,
+  removeCollaborator
 } from '@/lib/actions';
 import ListItemRow from '@/components/organisms/ListItemRow';
 import AddItemForm from '@/components/organisms/AddItemForm';
 import BottomSheet from '@/components/molecules/BottomSheet';
 import ProgressBar from '@/components/atoms/ProgressBar';
-import Button from '@/components/atoms/Button';
+import CollaboratorsModal from '@/components/organisms/CollaboratorsModal';
 
 interface ListDetailClientProps {
   list: ShoppingList;
   items: ListItem[];
+  currentUser: User;
+  collaborators: Collaborator[];
 }
 
-export default function ListDetailClient({ list, items: initialItems }: ListDetailClientProps) {
+export default function ListDetailClient({ 
+  list, 
+  items: initialItems,
+  currentUser,
+  collaborators
+}: ListDetailClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
 
   // Ações para deletar a lista inteira
   const handleDeleteList = async () => {
@@ -35,6 +46,27 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
     
     startTransition(async () => {
       const res = await deleteList(list.id);
+      if (res?.error) {
+        setError(res.error);
+      } else {
+        router.push('/dashboard');
+        router.refresh();
+      }
+    });
+  };
+
+  // Ação para colaborador sair da lista
+  const handleLeaveList = async () => {
+    if (!confirm('Deseja realmente sair desta lista compartilhada? Você perderá o acesso a ela.')) return;
+
+    const currentCollaborator = collaborators.find(c => c.user_id === currentUser.id);
+    if (!currentCollaborator) {
+      setError('Colaborador não encontrado nesta lista.');
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await removeCollaborator(list.id, currentCollaborator.id);
       if (res?.error) {
         setError(res.error);
       } else {
@@ -102,22 +134,68 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
           <ArrowLeft size={22} />
         </Link>
         <div className="list-detail-title-block">
-          <div className="list-detail-title-row">
-            <h1 className="list-detail-title">{list.title}</h1>
+          <div className="list-detail-title-row" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <h1 className="list-detail-title" style={{ margin: 0 }}>{list.title}</h1>
+            {list.is_shared && (
+              <span 
+                onClick={() => setIsShareSheetOpen(true)}
+                title="Ver colaboradores"
+                style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '4px', 
+                  fontSize: '11px', 
+                  background: 'var(--primary-light, #e8f9f2)', 
+                  color: 'var(--primary, #3ebd93)', 
+                  padding: '4px 8px', 
+                  borderRadius: '20px', 
+                  fontWeight: '700', 
+                  cursor: 'pointer',
+                }}
+              >
+                <Users size={12} />
+                <span>{collaborators.filter(c => c.status === 'accepted').length + 1}</span>
+              </span>
+            )}
           </div>
           <p className="list-detail-meta">
             Categoria: <strong>{list.category}</strong> • {list.is_shared ? 'Lista Compartilhada' : 'Lista Pessoal'}
           </p>
         </div>
-        <button 
-          className="btn-new-list"
-          onClick={() => setIsAddSheetOpen(true)}
-          title="Adicionar Produto"
-          aria-label="Adicionar Produto"
-        >
-          <Plus size={18} />
-          <span>Novo Item</span>
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {list.user_id === currentUser.id && (
+            <button 
+              className="icon-button"
+              onClick={() => setIsShareSheetOpen(true)}
+              title="Gerenciar Colaboradores"
+              aria-label="Gerenciar Colaboradores"
+              style={{
+                width: '42px',
+                height: '42px',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'var(--card-bg)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                color: 'var(--text-dark)',
+                cursor: 'pointer'
+              }}
+            >
+              <Users size={20} />
+            </button>
+          )}
+          <button 
+            className="btn-new-list"
+            onClick={() => setIsAddSheetOpen(true)}
+            title="Adicionar Produto"
+            aria-label="Adicionar Produto"
+          >
+            <Plus size={18} />
+            <span>Novo Item</span>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -135,6 +213,19 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
         <AddItemForm
           onAddItem={handleAddItem}
           isPending={isPending}
+        />
+      </BottomSheet>
+
+      {/* Bottom Sheet de Colaboradores */}
+      <BottomSheet 
+        isOpen={isShareSheetOpen} 
+        onClose={() => setIsShareSheetOpen(false)}
+        title="Colaboradores"
+      >
+        <CollaboratorsModal
+          listId={list.id}
+          collaborators={collaborators}
+          isOwner={list.user_id === currentUser.id}
         />
       </BottomSheet>
 
@@ -159,14 +250,25 @@ export default function ListDetailClient({ list, items: initialItems }: ListDeta
       </div>
 
       <div style={{ marginTop: '20px', marginBottom: '20px', display: 'flex', justifyContent: 'center' }}>
-        <button 
-          className="btn-danger"
-          onClick={handleDeleteList}
-          title="Excluir Lista"
-        >
-          <Trash2 size={18} />
-          <span>Excluir Lista</span>
-        </button>
+        {list.user_id === currentUser.id ? (
+          <button 
+            className="btn-danger"
+            onClick={handleDeleteList}
+            title="Excluir Lista"
+          >
+            <Trash2 size={18} />
+            <span>Excluir Lista</span>
+          </button>
+        ) : (
+          <button 
+            className="btn-warning"
+            onClick={handleLeaveList}
+            title="Sair da Lista"
+          >
+            <LogOut size={18} />
+            <span>Sair da Lista</span>
+          </button>
+        )}
       </div>
 
       {/* Barra de Orçamento Fixada Inferior (Modo Compra) */}

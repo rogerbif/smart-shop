@@ -1,5 +1,10 @@
 # Histórico do Projeto: SmartShop
 
+### [21/05/2026] v0.4.0 - Compartilhamento de Listas, Máscara Monetária e Redesenho da Interface (Figma)
+- [Feature] **Compartilhamento e Colaboração**: Implementação de sistema lógico multi-tenancy via RLS para permitir múltiplos colaboradores por lista de compras. Adicionado fluxo de envio, recebimento, aceitação e recusa de convites de e-mail, incluindo trigger para vincular convites retroativamente para novos usuários.
+- [UI/UX] **Máscara Monetária BRL**: Implementação de formatação monetária (BRL) em tempo real no campo de preço do formulário de itens.
+- [UX/DesignOps] **Redesenho Fiel ao Figma**: Nova logo centralizada, menu hambúrguer com painel lateral Sidebar para perfil e links, BottomNav de altura compacta (`56px`) com status superior azul de item ativo, Hero Banner estilizado com imagem do Unsplash e cards de listas com miniatura de categoria lateral (56px) e barra de progresso verde-escura Figma.
+
 ### [20/05/2026] v0.1.0 - Refatoração UI da Tela de Lista e Bottom Sheet
 - [UX/DesignOps] **Refatoração para Bottom Sheet**: O formulário de Adição de Item agora é renderizado usando um componente Atômico de Bottom Sheet no mobile.
 - [UX/DesignOps] **Ajuste de Navegação na Tela de Detalhes**: Remoção da BottomNav (`/list/[id]`) para focar a experiência no conteúdo e lista.

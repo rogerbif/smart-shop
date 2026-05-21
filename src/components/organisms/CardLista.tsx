@@ -3,12 +3,6 @@
 import Link from 'next/link';
 import { 
   ChevronRight, 
-  ShoppingCart, 
-  Pill, 
-  Sparkles, 
-  BookOpen, 
-  Calendar,
-  ListTodo,
   Users2,
   Lock
 } from 'lucide-react';
@@ -26,33 +20,34 @@ export default function CardLista({ list }: CardListaProps) {
   const bought = list.bought_items;
   const progressPercent = total > 0 ? Math.round((bought / total) * 100) : 0;
 
-  // Selecionar ícone baseado na categoria
-  const getCategoryIcon = (category: string) => {
+  // Obter imagem de capa da categoria via Unsplash
+  const getCategoryImageUrl = (category: string) => {
     switch (category) {
       case 'Supermercado':
-        return <ShoppingCart className="cat-icon text-super" size={24} />;
+        return 'https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=150&auto=format&fit=crop';
       case 'Farmácia':
-        return <Pill className="cat-icon text-farmacia" size={24} />;
+        return 'https://images.unsplash.com/photo-1584017911766-d451b3d0e843?q=80&w=150&auto=format&fit=crop';
       case 'Eventos':
-        return <Calendar className="cat-icon text-eventos" size={24} />;
+        return 'https://images.unsplash.com/photo-1513151233558-d860c5398176?q=80&w=150&auto=format&fit=crop';
       case 'Material Escolar':
-        return <BookOpen className="cat-icon text-escola" size={24} />;
+        return 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=150&auto=format&fit=crop';
       case 'Coisas que quero comprar':
-        return <Sparkles className="cat-icon text-desejos" size={24} />;
+      case 'Móveis para casa':
+        return 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=150&auto=format&fit=crop';
       default:
-        return <ListTodo className="cat-icon text-default" size={24} />;
+        return 'https://images.unsplash.com/photo-1506784983877-45594efa4cbe?q=80&w=150&auto=format&fit=crop';
     }
   };
-
-  const cleanCategoryClass = `cat-${list.category.toLowerCase().replace(/\s+/g, '-') || 'default'}`;
 
   return (
     <Link href={`/list/${list.id}`} className="list-card-link">
       <div className="list-card">
-        {/* Ícone ilustrativo esquerdo */}
-        <div className={`list-card-icon-wrapper ${cleanCategoryClass}`}>
-          {getCategoryIcon(list.category)}
-        </div>
+        {/* Imagem de categoria no canto esquerdo */}
+        <img 
+          src={getCategoryImageUrl(list.category)} 
+          alt={list.category} 
+          className="list-card-thumbnail"
+        />
 
         {/* Informações centrais */}
         <div className="list-card-content">

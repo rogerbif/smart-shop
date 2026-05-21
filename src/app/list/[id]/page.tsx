@@ -1,4 +1,4 @@
-import { getCurrentUser, getListDetails } from '@/lib/actions';
+import { getCurrentUser, getListDetails, getListCollaborators } from '@/lib/actions';
 import { redirect } from 'next/navigation';
 import ListDetailClient from './ListDetailClient';
 
@@ -27,5 +27,14 @@ export default async function ListDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
-  return <ListDetailClient list={data.list} items={data.items} />;
+  const collaborators = await getListCollaborators(listId);
+
+  return (
+    <ListDetailClient 
+      list={data.list} 
+      items={data.items} 
+      currentUser={user} 
+      collaborators={collaborators} 
+    />
+  );
 }

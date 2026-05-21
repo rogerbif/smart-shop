@@ -16,11 +16,30 @@ export default function AddItemForm({
   const [qty, setQty] = useState(1);
   const [price, setPrice] = useState('');
 
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  };
+
+  const parseCurrency = (val: string) => {
+    if (!val) return 0;
+    return parseFloat(val.replace(/\./g, '').replace(',', '.'));
+  };
+
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\D/g, '');
+    if (!rawValue) {
+      setPrice('');
+      return;
+    }
+    const numValue = parseInt(rawValue, 10) / 100;
+    setPrice(formatCurrency(numValue));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const parsedPrice = parseFloat(price) || 0.0;
+    const parsedPrice = parseCurrency(price);
     onAddItem(name, qty, parsedPrice);
 
     // Reset fields
@@ -57,7 +76,7 @@ export default function AddItemForm({
           className="form-item-input"
           placeholder="Preço Est. (R$)"
           value={price}
-          onChange={(e) => setPrice(e.target.value)}
+          onChange={handlePriceChange}
           disabled={isPending}
         />
       </div>

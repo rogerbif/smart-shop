@@ -8,7 +8,7 @@ interface Tab {
 interface TabGroupProps {
   tabs: Tab[];
   activeTabId: string;
-  onTabChange: (id: any) => void;
+  onTabChange: (id: string) => void;
   className?: string;
 }
 

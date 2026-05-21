@@ -2,12 +2,24 @@ import { getCurrentUser } from '@/lib/actions';
 import { redirect } from 'next/navigation';
 import { createServerClient } from '@/lib/supabase';
 import { BarChart3, Clock, Wallet, CheckSquare } from 'lucide-react';
-import Link from 'next/link';
 
 interface ListCostRow {
   title: string;
   total_cost: number;
   spent_cost: number;
+}
+
+interface ItemData {
+  estimated_price: number | string;
+  quantity: number;
+  is_bought: boolean;
+}
+
+interface ListData {
+  id: string;
+  title?: string;
+  created_at?: string;
+  items?: ItemData[];
 }
 
 export default async function ReportsPage() {
@@ -26,13 +38,13 @@ export default async function ReportsPage() {
     .order('created_at', { ascending: false })
     .limit(5);
 
-  const listCosts: ListCostRow[] = (listsWithItems || []).map((list: any) => {
+  const listCosts: ListCostRow[] = (listsWithItems as ListData[] || []).map((list: ListData) => {
     const items = list.items || [];
-    const total_cost = items.reduce((sum: number, i: any) => sum + (parseFloat(i.estimated_price) * i.quantity), 0);
-    const spent_cost = items.reduce((sum: number, i: any) => {
-      return sum + (i.is_bought ? (parseFloat(i.estimated_price) * i.quantity) : 0);
+    const total_cost = items.reduce((sum: number, i: ItemData) => sum + (parseFloat(String(i.estimated_price)) * i.quantity), 0);
+    const spent_cost = items.reduce((sum: number, i: ItemData) => {
+      return sum + (i.is_bought ? (parseFloat(String(i.estimated_price)) * i.quantity) : 0);
     }, 0);
-    return { title: list.title, total_cost, spent_cost };
+    return { title: list.title || '', total_cost, spent_cost };
   });
 
   // 2. Estatísticas gerais — buscar TODAS as listas (sem limit)
@@ -41,7 +53,7 @@ export default async function ReportsPage() {
     .select('id, items(estimated_price, quantity, is_bought)')
     .eq('user_id', user.id);
 
-  const allLists = allListsWithItems || [];
+  const allLists = (allListsWithItems as ListData[]) || [];
   const totalLists = allLists.length;
   let totalItems = 0;
   let boughtItems = 0;
@@ -49,10 +61,10 @@ export default async function ReportsPage() {
   let totalSpent = 0;
 
   for (const list of allLists) {
-    const items = (list as any).items || [];
+    const items = list.items || [];
     totalItems += items.length;
     for (const item of items) {
-      const price = parseFloat(item.estimated_price) * item.quantity;
+      const price = parseFloat(String(item.estimated_price)) * item.quantity;
       totalEstimated += price;
       if (item.is_bought) {
         boughtItems++;

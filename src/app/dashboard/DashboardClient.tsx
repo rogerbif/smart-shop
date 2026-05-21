@@ -45,7 +45,7 @@ export default function DashboardClient({ initialLists }: DashboardClientProps) 
       <TabGroup
         tabs={DASHBOARD_TABS}
         activeTabId={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(id) => setActiveTab(id as 'all' | 'personal' | 'shared')}
       />
 
       {/* Listagem de Cards */}

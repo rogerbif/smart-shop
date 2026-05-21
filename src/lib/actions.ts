@@ -1,6 +1,6 @@
 'use server';
 
-import { createServerClient, createAdminClient } from './supabase';
+import { createServerClient } from './supabase';
 import { redirect } from 'next/navigation';
 
 export interface User {
@@ -63,7 +63,7 @@ export async function login(formData: FormData) {
     }
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro no login:', error);
     return { error: 'Erro interno ao realizar login.' };
   }
@@ -109,7 +109,7 @@ export async function register(formData: FormData) {
     }
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro no cadastro:', error);
     return { error: 'Erro interno ao realizar cadastro.' };
   }
@@ -141,7 +141,7 @@ export async function getCurrentUser(): Promise<User | null> {
       name: profile?.name || authUser.user_metadata?.name || 'Usuário',
       avatar_url: profile?.avatar_url || authUser.user_metadata?.avatar_url || null,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -175,7 +175,7 @@ export async function getLists(filter: 'all' | 'personal' | 'shared'): Promise<S
       return [];
     }
 
-    return (rows || []).map((row: any) => {
+    return (rows || []).map((row: { id: number; title: string; category: string; is_shared: boolean; user_id: string; created_at: string; items: { id: number; is_bought: boolean }[] }) => {
       const items = row.items || [];
       return {
         id: row.id,
@@ -185,7 +185,7 @@ export async function getLists(filter: 'all' | 'personal' | 'shared'): Promise<S
         user_id: row.user_id,
         created_at: row.created_at,
         total_items: items.length,
-        bought_items: items.filter((i: any) => i.is_bought === true).length,
+        bought_items: items.filter((i: { is_bought: boolean }) => i.is_bought === true).length,
       };
     });
   } catch (error) {
@@ -232,15 +232,15 @@ export async function getListDetails(listId: number): Promise<{ list: ShoppingLi
       user_id: listRow.user_id,
       created_at: listRow.created_at,
       total_items: embeddedItems.length,
-      bought_items: embeddedItems.filter((i: any) => i.is_bought === true).length,
+      bought_items: embeddedItems.filter((i: { is_bought: boolean }) => i.is_bought === true).length,
     };
 
-    const items: ListItem[] = (itemsRows || []).map((item: any) => ({
+    const items: ListItem[] = (itemsRows || []).map((item: { id: number; list_id: number; name: string; quantity: number; estimated_price: string | number; is_bought: boolean }) => ({
       id: item.id,
       list_id: item.list_id,
       name: item.name,
       quantity: item.quantity,
-      estimated_price: parseFloat(item.estimated_price) || 0,
+      estimated_price: parseFloat(String(item.estimated_price)) || 0,
       is_bought: item.is_bought,
     }));
 

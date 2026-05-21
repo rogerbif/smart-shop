@@ -11,9 +11,9 @@ interface BottomSheetProps {
 export default function BottomSheet({ isOpen, onClose, title, children }: BottomSheetProps) {
   const [shouldRender, setRender] = useState(isOpen);
 
-  useEffect(() => {
-    if (isOpen) setRender(true);
-  }, [isOpen]);
+  if (isOpen && !shouldRender) {
+    setRender(true);
+  }
 
   const handleAnimationEnd = () => {
     if (!isOpen) setRender(false);
